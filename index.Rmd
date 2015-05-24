@@ -1,0 +1,97 @@
+---
+title: "Machine Learning Course Project"
+author: "Dmitry Polinichenko"
+date: "Sunday, May 24, 2015"
+output: html_document
+---
+
+###Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal of this project is to predict the manner in which they did the exercise. 
+
+### Building the model
+
+We have the data in a CSV file. First, We load the data from the file and try to do some exploratory data analysis. Before building the model we must get rid of the variables which are of no use for our purposes; these are names, window info, and timestamps. Then we should eradicate columns full of NAs and almost empty. We do that with the help of functions, as follows:
+
+```{r}
+set.seed(123)
+training <- read.csv("pml-training.csv")
+
+drops1 <- c("user_name", "X", "new_window", "num_window", "raw_timestamp_part_1",
+            "raw_timestamp_part_2", "cvtd_timestamp")
+
+
+getnas <- function(x){
+        sum(is.na(x))
+}
+
+getdiv <- function(xx){
+    
+    res <- FALSE
+
+    for (x in xx) {
+        
+        if (!is.na(x)) {
+            if (x == '#DIV/0!') {
+                res <- TRUE
+                break
+            }
+        }
+    }
+    
+    res
+}
+
+nas <- sapply(training, getnas)
+nas <- nas[nas>0]
+
+divs <- sapply(training, getdiv)
+divs <- divs[divs==TRUE]
+
+drops2 <- names(nas)
+drops3 <- names(divs)
+
+## get rid of unneeded variables
+
+tr2 <- training[,!(names(training) %in% drops1)]
+tr2 <- tr2[,!(names(tr2) %in% drops2)]
+tr2 <- tr2[,!(names(tr2) %in% drops3)]
+
+## the result is a factor!
+tr2$classe <- as.factor(tr2$classe)
+
+```
+
+After tidying up the dataset, we can do some machine learning with the help of the caret pacakge. Let's use the Random Forest algorithm with cross validation. We set the percentage of data that goes to training as 75%, and the number of cross validation datasets to 5. 
+
+```{r}
+library(caret)
+spl <- createDataPartition(y=tr2$classe, p=.75, list=FALSE)
+mytrain <- tr2[spl,]
+validate <- tr2[-spl,]
+rf_model<-train(classe~.,data=mytrain,method="rf",
+                trControl=trainControl(method="cv",number=5),
+                allowParallel=TRUE)
+```
+
+The result we got is the following:
+
+```{r}
+rf_model
+rf_model$finalModel
+```
+
+We can see that the estimate out-of-sample error rate is `r round(mean(rf_model$finalModel$confusion[,6])*100,3)`%.
+
+### Testing the model
+
+We are now ready to test our prediction on the test dataset:
+
+```{r}
+pred <- predict(rf_model, validate)
+validate$predRight <- pred==validate$classe
+errors <- !pred==validate$classe
+table(pred, validate$classe)
+```
+
+The error rate can be calculated from the table: we divide the number of all the errornous cases by the number of all cases; as a result we get `r round((sum(errors) / length(pred))*100,2)`%. We can see that it's very close to the estimate out-of-sample error rate.
